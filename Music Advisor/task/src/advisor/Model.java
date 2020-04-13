@@ -1,6 +1,5 @@
 package advisor;
 
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 
@@ -92,7 +91,7 @@ public class Model {
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 200) {
-            JsonObject jo = JsonParser.parseString(response.body()).getAsJsonObject();
+            var jo = JsonParser.parseString(response.body()).getAsJsonObject();
             accessToken = jo.get("access_token").getAsString();
             refreshToken = jo.get("refresh_token").getAsString();
             return true;
@@ -186,7 +185,6 @@ public class Model {
                     });
                     return list;
             }
-
         } else {
             return Collections.singletonList(jo.get("error").getAsJsonObject().get("message").getAsString());
         }
@@ -210,5 +208,4 @@ public class Model {
             exchange.getResponseBody().close();
         });
     }
-
 }
