@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.util.Scanner;
 
 public class Controller {
-    @NotNull private Model model;
-    @NotNull private View view;
+    @NotNull
+    private Model model;
+    @NotNull
+    private View view;
 
     public Controller(@NotNull Model model, @NotNull View view) {
         this.model = model;
@@ -32,22 +34,17 @@ public class Controller {
                     System.out.println("---GOODBYE!---");
                     return;
                 }
+                if (command == Command.UNKNOWN) {
+                    System.out.println("Unknown command, try again");
+                    continue;
+                }
                 if (model.isAuthorized()) {
                     switch (command) {
                         case NEW:
-                            view.setContent(model.newReleases());
-                            view.update();
-                            break;
                         case FEATURED:
-                            view.setContent(model.featured());
-                            view.update();
-                            break;
                         case PLAYLISTS:
-                            view.setContent(model.playlists(command.arg));
-                            view.update();
-                            break;
                         case CATEGORIES:
-                            view.setContent(model.categories());
+                            view.setContent(model.requestData(command));
                             view.update();
                             break;
                         case NEXT:
@@ -56,9 +53,6 @@ public class Controller {
                         case PREV:
                             view.prev();
                             break;
-                        case UNKNOWN:
-                            System.out.println("Unknown command, try again");
-                            continue;
                     }
                 } else {
                     System.out.println("Please, provide access for application.");

@@ -37,16 +37,13 @@ public class Model {
     private String accessToken;
     private String refreshToken;
 
-    private Map<Command, String> commandEndpointMap = new HashMap<>();
+    private Map<Command, String> commandEndpoints = Map.of(
+            Command.NEW, "/v1/browse/new-releases",
+            Command.CATEGORIES, "/v1/browse/categories",
+            Command.FEATURED, "/v1/browse/featured-playlists",
+            Command.PLAYLISTS, "/v1/browse/categories/%s/playlists");
 
-    {
-        commandEndpointMap.put(Command.NEW, "/v1/browse/new-releases");
-        commandEndpointMap.put(Command.CATEGORIES, "/v1/browse/categories");
-        commandEndpointMap.put(Command.FEATURED, "/v1/browse/featured-playlists");
-        commandEndpointMap.put(Command.PLAYLISTS, "/v1/browse/categories/%s/playlists");
-    }
-
-    private Map<String, String> categoryIdMap = new HashMap<>();
+    private Map<String, String> categoryIds = new HashMap<>();
 
 
     public void setAuthorizationServerPath(String authorizationServerPath) {
@@ -74,7 +71,9 @@ public class Model {
     }
 
     void stopListening() {
-        server.stop(1);
+        if (server != null) {
+            server.stop(1);
+        }
     }
 
     boolean requestAccessToken() throws IOException, InterruptedException {
@@ -105,137 +104,89 @@ public class Model {
         return accessToken != null && refreshToken != null;
     }
 
-    List<String> newReleases() throws IOException, InterruptedException {
-        var request = HttpRequest.newBuilder()
-                .header("Authorization", "Bearer " + accessToken)
-                .uri(URI.create(apiServerPath + commandEndpointMap.get(Command.NEW)))
-                .GET()
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonObject jo = JsonParser.parseString(response.body()).getAsJsonObject();
-        if (response.statusCode() == 200) {
-            List<String> list = new ArrayList<>();
-            jo.get("albums").getAsJsonObject()
-                    .get("items").getAsJsonArray().forEach(albumEl -> {
-
-                var album = albumEl.getAsJsonObject();
-                var albumName = album.get("name").getAsString();
-
-                var joiner = new StringJoiner(", ");
-                album.get("artists").getAsJsonArray().forEach(artistEl -> {
-                    var artistName = artistEl.getAsJsonObject().get("name").getAsString();
-                    joiner.add(artistName);
-                });
-
-                var spotifyURL = album.get("external_urls").getAsJsonObject().get("spotify").getAsString();
-
-                String res = albumName +
-                        System.lineSeparator() +
-                        '[' + joiner.toString() + ']' +
-                        System.lineSeparator() +
-                        spotifyURL +
-                        System.lineSeparator();
-                list.add(res);
-            });
-            return list;
+    List<String> requestData(Command command) throws IOException, InterruptedException {
+        URI uri;
+        if (command == Command.PLAYLISTS) {
+            if (!categoryIds.containsKey(command.arg)) {
+                requestData(Command.CATEGORIES);
+            }
+            var id = categoryIds.get(command.arg);
+            if (id == null) {
+                return Collections.singletonList("Unknown category name");
+            }
+            uri = URI.create(apiServerPath + String.format(commandEndpoints.get(command), id));
         } else {
-            return Collections.singletonList(jo.get("error").getAsJsonObject().get("message").getAsString());
+            uri = URI.create(apiServerPath + commandEndpoints.get(command));
         }
-    }
-
-    List<String> featured() throws IOException, InterruptedException {
         var request = HttpRequest.newBuilder()
-                .header("Authorization", "Bearer " + accessToken)
-                .uri(URI.create(apiServerPath + commandEndpointMap.get(Command.FEATURED)))
+                .header("Authorization", "Bearer" + accessToken)
+                .uri(uri)
                 .GET()
                 .build();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonObject jo = JsonParser.parseString(response.body()).getAsJsonObject();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        var jo = JsonParser.parseString(response.body()).getAsJsonObject();
+
         if (response.statusCode() == 200) {
-            List<String> list = new ArrayList<>();
-            jo.get("playlists").getAsJsonObject()
-                    .get("items").getAsJsonArray().forEach(playlistEl -> {
+            var list = new ArrayList<String>();
+            switch (command) {
+                case PLAYLISTS:
+                case FEATURED:
+                    jo.get("playlists").getAsJsonObject()
+                            .get("items").getAsJsonArray().forEach(playlistEl -> {
 
-                var playlist = playlistEl.getAsJsonObject();
-                var playlistName = playlist.get("name").getAsString();
-                var spotifyURL = playlist.get("external_urls").getAsJsonObject().get("spotify").getAsString();
+                        var playlist = playlistEl.getAsJsonObject();
+                        var playlistName = playlist.get("name").getAsString();
+                        var spotifyURL = playlist.get("external_urls").getAsJsonObject().get("spotify").getAsString();
 
-                var res = playlistName +
-                        System.lineSeparator() +
-                        spotifyURL +
-                        System.lineSeparator();
-                list.add(res);
+                        var res = playlistName +
+                                System.lineSeparator() +
+                                spotifyURL +
+                                System.lineSeparator();
+                        list.add(res);
 
-            });
-            return list;
-        } else {
-            return Collections.singletonList(jo.get("error").getAsJsonObject().get("message").getAsString());
-        }
-    }
+                    });
+                    return list;
+                case NEW:
+                    jo.get("albums").getAsJsonObject()
+                            .get("items").getAsJsonArray().forEach(albumEl -> {
 
-    List<String> categories() throws IOException, InterruptedException {
-        var request = HttpRequest.newBuilder()
-                .header("Authorization", "Bearer " + accessToken)
-                .uri(URI.create(apiServerPath + commandEndpointMap.get(Command.CATEGORIES)))
-                .GET()
-                .build();
+                        var album = albumEl.getAsJsonObject();
+                        var albumName = album.get("name").getAsString();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonObject jo = JsonParser.parseString(response.body()).getAsJsonObject();
-        if (response.statusCode() == 200) {
-            List<String> list = new ArrayList<>();
-            jo.get("categories").getAsJsonObject()
-                    .get("items").getAsJsonArray().forEach(categoryEl -> {
+                        var joiner = new StringJoiner(", ");
+                        album.get("artists").getAsJsonArray().forEach(artistEl -> {
+                            var artistName = artistEl.getAsJsonObject().get("name").getAsString();
+                            joiner.add(artistName);
+                        });
 
-                var category = categoryEl.getAsJsonObject();
-                var categoryName = category.get("name").getAsString();
-                var categoryId = category.get("id").getAsString();
+                        var spotifyURL = album.get("external_urls").getAsJsonObject().get("spotify").getAsString();
 
-                categoryIdMap.put(categoryName, categoryId);
+                        String res = albumName +
+                                System.lineSeparator() +
+                                '[' + joiner.toString() + ']' +
+                                System.lineSeparator() +
+                                spotifyURL +
+                                System.lineSeparator();
+                        list.add(res);
+                    });
+                    return list;
+                case CATEGORIES:
+                default:
+                    jo.get("categories").getAsJsonObject()
+                            .get("items").getAsJsonArray().forEach(categoryEl -> {
 
-                list.add(categoryName);
-            });
-            return list;
-        } else {
-            return Collections.singletonList(jo.get("error").getAsJsonObject().get("message").getAsString());
-        }
-    }
+                        var category = categoryEl.getAsJsonObject();
+                        var categoryName = category.get("name").getAsString();
+                        var categoryId = category.get("id").getAsString();
 
-    List<String> playlists(String catName) throws IOException, InterruptedException {
-        if (!categoryIdMap.containsKey(catName)) {
-            categories();
-        }
-        var id = categoryIdMap.get(catName);
-        if (id == null) {
-            return Collections.singletonList("Unknown category name");
-        }
+                        categoryIds.put(categoryName, categoryId);
 
-        var request = HttpRequest.newBuilder()
-                .header("Authorization", "Bearer " + accessToken)
-                .uri(URI.create(apiServerPath
-                        + String.format(commandEndpointMap.get(Command.PLAYLISTS), id)))
-                .GET()
-                .build();
+                        list.add(categoryName);
+                    });
+                    return list;
+            }
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonObject jo = JsonParser.parseString(response.body()).getAsJsonObject();
-        if (response.statusCode() == 200) {
-            List<String> list = new ArrayList<>();
-            jo.get("playlists").getAsJsonObject()
-                    .get("items").getAsJsonArray().forEach(playlistEl -> {
-                var playlist = playlistEl.getAsJsonObject();
-                var playlistName = playlist.get("name").getAsString();
-                var spotifyURL = playlist.get("external_urls").getAsJsonObject().get("spotify").getAsString();
-
-                var res = playlistName +
-                        System.lineSeparator() +
-                        spotifyURL +
-                        System.lineSeparator();
-                list.add(res);
-            });
-            return list;
         } else {
             return Collections.singletonList(jo.get("error").getAsJsonObject().get("message").getAsString());
         }
